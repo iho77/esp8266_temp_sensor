@@ -26,8 +26,8 @@ DHT dht(DHTPIN, DHTTYPE);
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-const char* ssid     = "iho";
-const char* password = "pkjgjk_wifi";
+const char* ssid     = "******"; 
+const char* password = "*******";
 const char* mqttServer = "192.168.1.110";
 const int mqttPort = 1883;
 const char* mqttUser = "";
@@ -172,10 +172,10 @@ bool isDataChanged(){
 
 	EEPROM.begin(25);
 
-	//Считали старые данные
+	//Г‘Г·ГЁГІГ Г«ГЁ Г±ГІГ Г°Г»ГҐ Г¤Г Г­Г­Г»ГҐ
 	EEPROM.get(addr,oldData);
 
-	//Если там мусор считаем что старые равны новым
+	//Г…Г±Г«ГЁ ГІГ Г¬ Г¬ГіГ±Г®Г° Г±Г·ГЁГІГ ГҐГ¬ Г·ГІГ® Г±ГІГ Г°Г»ГҐ Г°Г ГўГ­Г» Г­Г®ГўГ»Г¬
 	if (oldData.flag != 111) {
 		oldData.hum = newData.hum;
 		oldData.temp = newData.temp;

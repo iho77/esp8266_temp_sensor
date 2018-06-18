@@ -4,6 +4,9 @@
 #include <PubSubClient.h>
 #include <EEPROM.h>
 #include "Adafruit_Sensor.h"
+extern "C" {
+#include <user_interface.h>
+}
 
 #define MQTT_MAX_PACKET_SIZE 200
 #define DHTPIN D4
@@ -11,6 +14,7 @@
 #define tempChangeThr 2.0f
 #define humChangeThr 5.0f
 #define voltChangeThr 0.01f
+#define EEPROM_ADDR 0
 //#define DEBUG 1
 
 
@@ -21,6 +25,7 @@ typedef struct {
 	bool forceTrx;
 } _Data;
 
+
 _Data newData, oldData;
 
 struct {
@@ -28,12 +33,18 @@ struct {
 	_Data data;
 } memData;
 
+
+struct {
+	uint32_t crc32;
+	uint32_t runCount;
+} rtcData;
+
 DHT dht(DHTPIN, DHTTYPE);
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-const char* ssid     = "*";
-const char* password = "*";
+const char* ssid     = "iho";
+const char* password = "pkjgjk_wifi";
 const char* mqttServer = "192.168.1.110";
 const int mqttPort = 1883;
 const char* mqttUser = "";
@@ -47,6 +58,7 @@ const uint sleepSeconds = 300;
 
 int errStatus;
 long RSSI;
+bool dataOk;
 
 void readSensorData();
 void wifiinit(void);
@@ -54,6 +66,8 @@ void initmqtt(void);
 bool isDataChanged();
 void sendData();
 void debugOutput(const char *msg);
+void proceedRtcCounter();
+void readEEPROM(),writeEEPROM();
 uint32_t calculateCRC32(const uint8_t *data, size_t length);
 
 
@@ -67,11 +81,10 @@ void setup() {
 #ifdef DEBUG
 	Serial.begin(115200);
 	delay(2000);
-	//Serial.setDebugOutput(true);
+	Serial.setDebugOutput(true);
 	Serial.println("WakeUp");
 #endif
-
-	pinMode(D0, WAKEUP_PULLUP);
+   	pinMode(D0, WAKEUP_PULLUP);
 	pinMode(A0, INPUT);
 	WiFi.mode( WIFI_OFF );
     delay(1);
@@ -80,6 +93,9 @@ void setup() {
     newData.temp = 0;
     newData.volt = 0;
     oldData.forceTrx = false;
+    proceedRtcCounter();
+
+
 
 
 }
@@ -88,35 +104,17 @@ void setup() {
 void loop() {
 
 	  errStatus=0;
-	  uint addr = 0;
-	  uint32_t CRC;
 
 	  readSensorData();
 
-	  EEPROM.begin(sizeof(memData));
-	  EEPROM.get(addr,memData);
+	  readEEPROM();
 
-      debugOutput("Stored CRC:");
-      debugOutput(String(memData.crc32).c_str());
+	  String msg = "%12 : "+String(rtcData.runCount % 12);
+	  debugOutput(msg.c_str());
 
-      CRC = calculateCRC32((uint8_t *) &memData.data,sizeof(_Data));
-      debugOutput("Calculated CRC:");
-      debugOutput(String(CRC).c_str());
-
-
-	  if ( CRC != memData.crc32 ){
-		  debugOutput("CRC check failed!");
-		  oldData.temp = newData.temp;
-	  	  oldData.hum = newData.hum;
-	  	  oldData.volt = newData.volt;
-	  	  oldData.forceTrx = true;
-
-	  } else {
-	  debugOutput("CRC check sucsessfull");
-	  oldData.temp = memData.data.temp;
-	  oldData.hum = memData.data.hum;
-	  oldData.volt = memData.data.volt;
-	  oldData.forceTrx = memData.data.forceTrx;}
+	  if (rtcData.runCount % 12 == 10) {
+		  oldData.forceTrx = true;
+		}
 
 	  if (isDataChanged() || oldData.forceTrx ) {
 		  wifiinit();
@@ -129,17 +127,12 @@ void loop() {
 		  }
 		  if (errStatus == 1 || errStatus ==2){
 		  		 newData.forceTrx = true;
-		  		 debugOutput("Transmission failed. Set forceTrx = true");
+		  		 String msg = "Transmission failed. error code "+String(errStatus);
+		  		 debugOutput(msg.c_str());
 		  	 }
 
-		  memData.data.hum = newData.hum;
-		  memData.data.temp = newData.temp;
-		  memData.data.volt = newData.volt;
-		  memData.data.forceTrx = newData.forceTrx;
-		  memData.crc32 = calculateCRC32((uint8_t *) &memData.data,sizeof(_Data));
-		  EEPROM.put(addr,memData);
-		  debugOutput("Storing data in EEPROM");
-		  EEPROM.commit();
+		  writeEEPROM();
+
 
 	 }
 
@@ -249,7 +242,7 @@ void sendData(){
 	  dtostrf(newData.volt, 1, 2, str_voltage);
 
 	  msg = "{\"Time\":\"2018-05-20T16:47:35\",\"DHT22\":{\"Temperature\":"+String(str_temperature)+",\"Humidity\":"+String(str_humidity)+"},\"TempUnit\":\"C\"}";
-	  msg_stat = "{\"Time\":\"2018-05-20T20:35:29\",\"Uptime\":"+String(millis())+"0,\"Vcc\":"+String(str_voltage)+",\"POWER\":\"ON\",\"Wifi\":{\"AP\":2,\"SSId\":\"iho\",\"RSSI\":"+String(RSSI)+",\"APMac\":\"64:66:B3:F8:70:50\"}}";
+	  msg_stat = "{\"Time\":\"2018-05-20T20:35:29\",\"Uptime\":"+String(millis()/1000+rtcData.runCount*sleepSeconds)+",\"Vcc\":"+String(str_voltage)+",\"POWER\":\"ON\",\"Wifi\":{\"AP\":2,\"SSId\":\"iho\",\"RSSI\":"+String(RSSI)+",\"APMac\":\"64:66:B3:F8:70:50\"}}";
 
 	  debugOutput(msg.c_str());
 	  debugOutput(msg_stat.c_str());
@@ -284,5 +277,81 @@ uint32_t calculateCRC32(const uint8_t *data, size_t length){
 
   debugOutput(String(crc).c_str());
   return crc;
+
+}
+
+void proceedRtcCounter(){
+	 rst_info * ri;
+	 ri = ESP.getResetInfoPtr();
+
+	 ESP.rtcUserMemoryRead(0,(uint32_t *) &rtcData,sizeof(rtcData));
+
+	    	if (calculateCRC32((uint8_t *)&rtcData.runCount, sizeof(uint32_t)) != rtcData.crc32){
+	    		debugOutput("RTC data corrupted");
+	    		dataOk = false;
+	    	} else {
+	    		debugOutput("RTC data CRC ok");
+	    		dataOk = true;
+	    	}
+
+	    	if (ri->reason != 5 || !dataOk) {
+	    			rtcData.runCount = 0;
+	    			rtcData.crc32 = calculateCRC32((uint8_t *)&rtcData.runCount, sizeof(uint32_t));
+	    			ESP.rtcUserMemoryWrite(0,(uint32_t *) &rtcData,sizeof(rtcData));
+	    		} else {
+	    			rtcData.runCount++;
+	    			rtcData.crc32 = calculateCRC32((uint8_t *)&rtcData.runCount, sizeof(uint32_t));
+	    			ESP.rtcUserMemoryWrite(0,(uint32_t *) &rtcData,sizeof(rtcData));
+
+	    		}
+
+	    String msg =    "Run count"+String(rtcData.runCount);
+    	debugOutput(msg.c_str());
+
+
+}
+
+
+void readEEPROM(){
+
+ uint32_t CRC;
+
+ EEPROM.begin(sizeof(memData));
+ EEPROM.get(EEPROM_ADDR,memData);
+
+ debugOutput("Stored CRC:");
+ debugOutput(String(memData.crc32).c_str());
+
+ CRC = calculateCRC32((uint8_t *) &memData.data,sizeof(_Data));
+ debugOutput("Calculated CRC:");
+ debugOutput(String(CRC).c_str());
+
+
+		  if ( CRC != memData.crc32 ){
+			  debugOutput("CRC check failed!");
+			  oldData.temp = newData.temp;
+		  	  oldData.hum = newData.hum;
+		  	  oldData.volt = newData.volt;
+		  	  oldData.forceTrx = true;
+
+		  } else {
+		  debugOutput("CRC check sucsessfull");
+		  oldData.temp = memData.data.temp;
+		  oldData.hum = memData.data.hum;
+		  oldData.volt = memData.data.volt;
+		  oldData.forceTrx = memData.data.forceTrx;}
+
+}
+
+void writeEEPROM(){
+
+	memData.data.hum = newData.hum;
+	memData.data.temp = newData.temp;
+	memData.data.volt = newData.volt;
+	memData.data.forceTrx = newData.forceTrx;
+	memData.crc32 = calculateCRC32((uint8_t *) &memData.data,sizeof(_Data));
+	EEPROM.put(EEPROM_ADDR,memData);
+	debugOutput("Storing data in EEPROM");
+	EEPROM.commit();
 
 }

@@ -1,21 +1,29 @@
 #include <Arduino.h>
-#include <DHT.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <EEPROM.h>
-#include "Adafruit_Sensor.h"
+#include "sht30.h"
+#include <WiFiUdp.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
+#include <ESP8266HTTPUpdateServer.h>
 extern "C" {
 #include <user_interface.h>
 }
 
 #define MQTT_MAX_PACKET_SIZE 200
-#define DHTPIN D4
-#define DHTTYPE DHT22
+#define MQTT_SUB_TIMEOUT 1000
 #define tempChangeThr 2.0f
 #define humChangeThr 5.0f
 #define voltChangeThr 0.01f
 #define EEPROM_ADDR 0
 //#define DEBUG 1
+#ifdef DEBUG
+ #define SLEEP_TIME 20
+#else
+ #define SLEEP_TIME 300
+#endif
+
 
 
 typedef struct {
@@ -39,12 +47,14 @@ struct {
 	uint32_t runCount;
 } rtcData;
 
-DHT dht(DHTPIN, DHTTYPE);
+SHT3X sht30(0x45);
 WiFiClient espClient;
 PubSubClient client(espClient);
+ESP8266WebServer httpServer(80);
+ESP8266HTTPUpdateServer httpUpdater;
 
-const char* ssid     = "*";
-const char* password = "*";
+const char* ssid     = "iho";
+const char* password = "pkjgjk_wifi";
 const char* mqttServer = "192.168.1.110";
 const int mqttPort = 1883;
 const char* mqttUser = "";
@@ -54,11 +64,11 @@ const char* mqttTopicStat = "parnik/STAT";
 const char* mqttTopicIn = "parnik/cmd";
 
 
-const uint sleepSeconds = 300;
+const uint sleepSeconds = SLEEP_TIME;
 
-int errStatus;
+int errStatus,cmd;
 long RSSI;
-bool dataOk;
+bool dataOk, gotCmd, debugmode, isUpdateServer;
 
 void readSensorData();
 void wifiinit(void);
@@ -69,6 +79,9 @@ void debugOutput(const char *msg);
 void proceedRtcCounter();
 void readEEPROM(),writeEEPROM();
 uint32_t calculateCRC32(const uint8_t *data, size_t length);
+void callback(char* topic, byte* payload, unsigned int length);
+void normalloop(),otaloop();
+void initUpdateServer();
 
 
 
@@ -93,6 +106,10 @@ void setup() {
     newData.temp = 0;
     newData.volt = 0;
     oldData.forceTrx = false;
+    gotCmd = false;
+    cmd = 0;
+    debugmode = false;
+    isUpdateServer = false;
     proceedRtcCounter();
 
 
@@ -103,45 +120,97 @@ void setup() {
 
 void loop() {
 
-	  errStatus=0;
-
-	  readSensorData();
-
-	  readEEPROM();
-
-	  String msg = "%12 : "+String(rtcData.runCount % 12);
-	  debugOutput(msg.c_str());
-
-	  if (rtcData.runCount % 12 == 10) {
-		  oldData.forceTrx = true;
-		}
-
-	  if (isDataChanged() || oldData.forceTrx ) {
-		  wifiinit();
-		  if (errStatus == 0) {
-			  initmqtt();
-			  if (errStatus == 0) {
-				  debugOutput("Sending data");
-				  sendData();
-			  }
-		  }
-		  if (errStatus == 1 || errStatus ==2){
-		  		 newData.forceTrx = true;
-		  		 String msg = "Transmission failed. error code "+String(errStatus);
-		  		 debugOutput(msg.c_str());
-		  	 }
-
-		  writeEEPROM();
+	if(debugmode) otaloop(); else normalloop();
 
 
-	 }
+}
 
-	  WiFi.disconnect( true );
-	  delay( 1 );
-      ESP.deepSleep(sleepSeconds * 1000000, RF_DISABLED);
+void otaloop(){
+
+ client.subscribe(mqttTopicIn);
+ client.loop();
+ debugOutput("Debug mode on!");
+ if(!isUpdateServer) initUpdateServer();
+ httpServer.handleClient();
+
+ if (gotCmd && cmd==2 ) {
+				      	  gotCmd = false;
+				      	  debugmode = false;
+				      	  debugOutput("Mqtt command to normal mode!");
+				      	  client.unsubscribe(mqttTopicIn);
+				      	  client.publish(mqttTopicIn,"",true);
+				      	  client.publish(mqttTopicStat,"{\"DEBUG\":OFF)}");
+
+				         }
+ yield();
 }
 
 
+
+void initUpdateServer(){
+	debugOutput("Init update http server");
+	isUpdateServer = true;
+    MDNS.begin("esp8266");
+	httpUpdater.setup(&httpServer);
+	httpServer.begin();
+	MDNS.addService("http", "tcp", 80);
+	debugOutput("Ready!");
+	debugOutput(String(WiFi.localIP()).c_str());
+
+}
+
+void normalloop(){
+	 errStatus=0;
+
+		  readSensorData();
+
+		  readEEPROM();
+
+
+		  if (rtcData.runCount % 12 == 0) {
+			  oldData.forceTrx = true;
+			}
+
+		  if (isDataChanged() || oldData.forceTrx ) {
+			  wifiinit();
+			  if (errStatus == 0) {
+				  initmqtt();
+				  if (errStatus == 0) {
+					  debugOutput("Sending data");
+					  sendData();
+					  double t = millis();
+
+				  	  while (millis() - t < MQTT_SUB_TIMEOUT){
+				  		client.loop();
+				  	    if (gotCmd && cmd==1 ) {
+				      	  gotCmd = false;
+				      	  debugmode = true;
+				      	  debugOutput("Mqtt command to debug mode!");
+				      	  client.unsubscribe(mqttTopicIn);
+				      	  client.publish(mqttTopicIn,"",true);
+				      	  client.publish(mqttTopicStat,"{\"DEBUG\":ON)}");
+
+				         }
+				  	  }
+
+
+				  }
+			  }
+			  if (errStatus == 1 || errStatus ==2){
+			  		 newData.forceTrx = true;
+			  		 String msg = "Transmission failed. error code "+String(errStatus);
+			  		 debugOutput(msg.c_str());
+			  	 }
+
+			  writeEEPROM();
+
+
+		 }
+          if(debugmode) return;
+		  WiFi.disconnect( true );
+		  delay( 1 );
+	      ESP.deepSleep(sleepSeconds * 1000000, RF_DISABLED);
+}
 
 void debugOutput(const char *msg){
 #ifdef DEBUG
@@ -178,6 +247,7 @@ void initmqtt(){
   int i = 0;
   client.setServer(mqttServer, mqttPort);
   debugOutput("Trying to connect to MQTT");
+  client.setCallback(callback);
   client.connect("ESP32Client", mqttUser, mqttPassword );
   while (!client.connected()) {
 	   i++;
@@ -188,31 +258,26 @@ void initmqtt(){
   	   };
   	   delay(2000);
   	  }
+  client.subscribe(mqttTopicIn);
+  client.loop();
 }
 
 
 
 void readSensorData(){
 
-      debugOutput("Read DHT sensor");
-      int i = 0;
-      float t,h;
 
-      dht.begin();
-      h = dht.readHumidity();
-      t = dht.readTemperature();
+      if(sht30.get()==0){
+              debugOutput("Got temp&hum data");
+              newData.temp = sht30.cTemp;
+              newData.hum = sht30.humidity;
 
-      while(isnan(t) || isnan(h)) {
-       	  i++;
-    	  delay(3000);
-    	  h = dht.readHumidity();
-    	  t = dht.readTemperature();
-    	  if ( i>3 ) t=h=0.0;
-      }
-
-      newData.hum = h;
-	  newData.temp = t;
-
+            }
+            else
+            {
+         	   debugOutput("Sensor read error");
+         	   newData.temp = newData.hum = 0;
+            }
 
 	  newData.volt = analogRead(A0)/1023.0*4.2;
 }
@@ -241,7 +306,7 @@ void sendData(){
 	  dtostrf(newData.temp, 1, 2, str_temperature);
 	  dtostrf(newData.volt, 1, 2, str_voltage);
 
-	  msg = "{\"Time\":\"2018-05-20T16:47:35\",\"DHT22\":{\"Temperature\":"+String(str_temperature)+",\"Humidity\":"+String(str_humidity)+"},\"TempUnit\":\"C\"}";
+	  msg = "{\"Time\":\"2018-05-20T16:47:35\",\"SHT30\":{\"Temperature\":"+String(str_temperature)+",\"Humidity\":"+String(str_humidity)+"},\"TempUnit\":\"C\"}";
 	  msg_stat = "{\"Time\":\"2018-05-20T20:35:29\",\"Uptime\":"+String(millis()/1000+rtcData.runCount*sleepSeconds)+",\"Vcc\":"+String(str_voltage)+",\"POWER\":\"ON\",\"Wifi\":{\"AP\":2,\"SSId\":\"iho\",\"RSSI\":"+String(RSSI)+",\"APMac\":\"64:66:B3:F8:70:50\"}}";
 
 	  debugOutput(msg.c_str());
@@ -252,9 +317,7 @@ void sendData(){
 	    	  client.publish(mqttTopicData, msg.c_str(),true);
 	    	  client.publish(mqttTopicStat, msg_stat.c_str(),true);
 	    	  client.loop();
-	    	  delay(2000);
-	    	  client.disconnect();
-	      }
+		      }
 
 }
 
@@ -355,3 +418,24 @@ void writeEEPROM(){
 	EEPROM.commit();
 
 }
+
+
+void callback(char* topic, byte* payload, unsigned int length) {
+
+  byte* p = (byte*)malloc(length);
+
+
+  // Copy the payload to the new buffer
+  memcpy(p,payload,length);
+  cmd  = atoi((char *)p);
+  if (cmd == 1 || cmd == 2)  {
+	  debugOutput(String(cmd).c_str());
+	  gotCmd = true;
+     }
+   else debugOutput("Unknown command");
+
+
+  free(p);
+
+}
+

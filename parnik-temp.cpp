@@ -53,8 +53,8 @@ PubSubClient client(espClient);
 ESP8266WebServer httpServer(80);
 ESP8266HTTPUpdateServer httpUpdater;
 
-const char* ssid     = "iho";
-const char* password = "pkjgjk_wifi";
+const char* ssid     = "*****";
+const char* password = "********";
 const char* mqttServer = "192.168.1.110";
 const int mqttPort = 1883;
 const char* mqttUser = "";

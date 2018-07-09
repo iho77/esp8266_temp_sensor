@@ -6,7 +6,7 @@ Main features:
 - Measure every 5 min, send data only than readings exceed from thresholds + every one hour
 - rtc mem used for uptime\wakeup counter 
 - OTA mode with internal web server
- -sht30 instead DHT22 (much pricise and more simple communication)
+- sht30 instead DHT22 (much pricise and more simple communication)
  
  
  to switch to debug (OTA mode) send "1" to "parnik/cmd" (mosquitto_pub -h 127.0.0.1 -t "parnik/cmd" -r -m 1). Message MUST BE RETAINED to sensor read it after deep sleep wake up.

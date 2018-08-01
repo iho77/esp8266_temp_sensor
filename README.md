@@ -16,3 +16,6 @@ Main features:
 ToDo
 looks like battery measurement not too precise, 2 weeks shows 4.2, after 0.01 drop in voltage and after can not wake up.
 a lot of error checking procedures has to be written. But so boring :)
+
+P.S>
+At this moment 444 hours uptime from 1800 mA battery. I.e. 18 days. Voltage still 4.2

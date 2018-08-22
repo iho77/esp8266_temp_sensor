@@ -19,3 +19,6 @@ a lot of error checking procedures has to be written. But so boring :)
 
 P.S>
 At this moment 444 hours uptime from 1800 mA battery. I.e. 18 days. Voltage still 4.2
+P.P.S
+ I can not believe but up to this moment (22.08.2018) uptime is 39 days. Voltage still 4.2
+

@@ -17,8 +17,10 @@ ToDo
 looks like battery measurement not too precise, 2 weeks shows 4.2, after 0.01 drop in voltage and after can not wake up.
 a lot of error checking procedures has to be written. But so boring :)  
 
-P.S>
+P.S>  
 At this moment 444 hours uptime from 1800 mA battery. I.e. 18 days. Voltage still 4.2  
-P.P.S
- I can not believe but up to this moment (22.08.2018) uptime is 39 days. Voltage still 4.2
+P.P.S  
+ I can not believe but up to this moment (22.08.2018) uptime is 39 days. Voltage still 4.2   
+p.p.p.s  
+8/09  uptime is 1356 hours or 56 days. Voltage still 4.2
 

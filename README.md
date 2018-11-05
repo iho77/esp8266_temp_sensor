@@ -22,5 +22,7 @@ At this moment 444 hours uptime from 1800 mA battery. I.e. 18 days. Voltage stil
 P.P.S  
  I can not believe but up to this moment (22.08.2018) uptime is 39 days. Voltage still 4.2   
 p.p.p.s  
-8/09  uptime is 1356 hours or 56 days. Voltage still 4.2
+8/09  uptime is 1356 hours or 56 days. Voltage still 4.2  
+p....p.s
+Still working. 5/11/2018 uptime is  2744 hours. Voltage 3.91 outdoor, temp -3.... 
 

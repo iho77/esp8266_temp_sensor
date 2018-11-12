@@ -24,5 +24,9 @@ P.P.S
 p.p.p.s  
 8/09  uptime is 1356 hours or 56 days. Voltage still 4.2  
 p....p.s
-Still working. 5/11/2018 uptime is  2744 hours. Voltage 3.91 outdoor, temp -3.... 
+Still working.   
+5/11/2018 uptime is  2744 hours. Voltage 3.91 outdoor, temp -3.... 
+
+  
+so, it stops at 11.11.2018 with voltage about 3.6 vv
 
